@@ -59,8 +59,8 @@ def print_event(cpu, data, size):
 
 # initialize BPF
 b = BPF(text=bpf_text)
-print("%-11s %-14s %-6s %-7s" % ("TIME(s)", "COMM", "PID",
-     "DELTA"))
+print("%-11s %-14s %-6s %-7s" % ("TIME", "COMM", "PID",
+     "DELTA(ns)"))
 b["events"].open_perf_buffer(print_event)
 while 1:
     try:
