@@ -21,7 +21,9 @@ struct data_t {
     u64 seq_w;
     u64 rand_r;
     u64 rand_w;
-    struct request *prev_rq;
+    u64 prev_OP;
+    u64 prev_sec;
+    u64 prev_len;
     
 };
 struct e_data_t {
@@ -55,25 +57,28 @@ static inline void set_event_data(struct e_data_t * edata, struct request *rq, u
     edata->len = rq->__data_len;
     edata->OP = is_OP_RW(rq);
     edata->seq = seq;
+
         
 }
 
-// check new request is sequetial
 static inline int is_seq(struct data_t *data, struct request *rq){
 
     u64 p_sec, sec, p_len, len;
-    p_sec = (u64) data->prev_rq->__sector;
+
+    p_sec = (u64) data->prev_sec;
     sec = (u64) rq->__sector;
-    p_len = (u64) data->prev_rq->__data_len;
+    p_len = (u64) data->prev_len;
     len = (u64) rq->__data_len;
 
-    if(p_sec == sec)
+    if(p_sec == sec){
         return 1;
-    if((p_sec < sec) && (p_sec + p_len >= sec))
+    }
+    if((p_sec < sec) && (p_sec + p_len/512 >= sec)){
         return 1;
-    if((p_sec > sec) && (sec + len >= p_sec))
+    }
+    if((p_sec > sec) && (sec + len/512 >= p_sec)){
         return 1;
-
+    }
     return 0;
 }
 
@@ -97,28 +102,36 @@ int count_rq_pattern(struct pt_regs *ctx, struct request *rq)
     if(OP != 0 && OP != 1)
         return -1;
     
-    if(!val->prev_rq){
-        val->prev_rq = rq;
+    if(!val->prev_OP){
+        val->prev_sec = rq->__sector;
+        val->prev_len = rq->__data_len;
+        val->prev_OP = OP;
+
         if(OP == 1)
             (val->seq_w)++;
         if(OP == 0)
             (val->seq_r)++;
 
-        set_event_data(&edata, rq, 1);
+        set_event_data(&edata, rq, 1);      
         events.perf_submit(ctx, &edata, sizeof(edata));
+
         
         return 0;
     }
 
-    prev_OP = is_OP_RW(val->prev_rq);
+    prev_OP = val->prev_OP;
     if(OP != prev_OP){
         if(OP == 1)
             (val->rand_w)++;
         if(OP == 0)
             (val->rand_r)++;
-        val->prev_rq = rq;
+        //val->prev_rq = rq;
+        val->prev_sec = rq->__sector;
+        val->prev_len = rq->__data_len;
+        val->prev_OP = OP;
 
         set_event_data(&edata, rq, 0);
+
         events.perf_submit(ctx, &edata, sizeof(edata));
         
         return 0;
@@ -141,9 +154,12 @@ int count_rq_pattern(struct pt_regs *ctx, struct request *rq)
         }
     }
         
-    val->prev_rq = rq;
+    val->prev_sec = rq->__sector;
+    val->prev_len = rq->__data_len;
+    val->prev_OP = OP;  
 
     set_event_data(&edata, rq, seq);
+
     events.perf_submit(ctx, &edata, sizeof(edata));
 
     return 0;
